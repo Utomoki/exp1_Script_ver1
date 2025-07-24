@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>課題A/B/C 統合実験</title>
+  <style>html, body {height: 100%; margin: 0; padding: 0; overflow: hidden;}</style>
+  <script src="https://unpkg.com/jspsych@7.3.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-preload"></script>
+  <link href="https://unpkg.com/jspsych@7.3.0/css/jspsych.css" rel="stylesheet" />
+</head>
+<body></body>
+<script>
+const fastmode = 0;
+
+function hslToRgb(h, s, l) {
+  s /= 100;
+  l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const h_ = h / 60;
+  const x = c * (1 - Math.abs(h_ % 2 - 1));
+  let r = 0, g = 0, b = 0;
+  if (0 <= h_ && h_ < 1) [r, g, b] = [c, x, 0];
+  else if (1 <= h_ && h_ < 2) [r, g, b] = [x, c, 0];
+  else if (2 <= h_ && h_ < 3) [r, g, b] = [0, c, x];
+  else if (3 <= h_ && h_ < 4) [r, g, b] = [0, x, c];
+  else if (4 <= h_ && h_ < 5) [r, g, b] = [x, 0, c];
+  else if (5 <= h_ && h_ < 6) [r, g, b] = [c, 0, x];
+  const m = l - c / 2;
+  r = Math.round((r + m) * 255);
+  g = Math.round((g + m) * 255);
+  b = Math.round((b + m) * 255);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function generateMaxContrastColors() {
+  const order = [];
+  for (let i = 0; i < 12; i++) {
+    order.push(i * 30);
+  }
+  return order.map(h => hslToRgb(h, 100, 50));
+}
+
+function generateColorList(length) {
+  const baseColors = generateMaxContrastColors();
+  const blockColors = jsPsych.randomization.shuffle(baseColors);
+  const colorList = [];
+  for (let i = 0; i < length; i++) {
+    const colorIndex = Math.floor(i / 4) % blockColors.length;
+    colorList.push(blockColors[colorIndex]);
+  }
+  return colorList;
+}
+
+function generatePositionList(n) {
+  const pattern = ["left", "left", "left", "left", "right", "right", "right", "right"];
+  const list = [];
+  for (let i = 0; i < n; i++) list.push(pattern[i % pattern.length]);
+  return list;
+}
+
+function createTrial(item, position, color) {
+  const xPercent = position === "left" ? "34%" : "66%";
+  const image_html = `
+    <div style="position: relative; width: 100vw; height: 400px;">
+      <img src="${item.file}" style=" 
+        position: absolute;
+        top: 50%; left: ${xPercent};
+        transform: translate(-50%, -50%);
+        max-height: 300px;
+        border: 10px solid ${color};
+        box-sizing: border-box;" />
+    </div>
+    <p style="text-align: center;">過去1カ月で見たことがありますか？<br>1: はい 2: いいえ</p>`;
+
+  return {
+    timeline: [
+      {
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: `
+          <div style="width: 100vw; height: 100vh; position: relative;">
+            <div style="
+              position: absolute;
+              top: 50%; left: 50%;
+              transform: translate(-50%, -80%);
+              font-size: 48px;
+              display: inline-block
+              line-height: 1;
+            ">+</div>
+          </div>
+        `,
+        choices: "NO_KEYS",
+        trial_duration: 500
+      },
+      {
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: image_html,
+        choices: ['1', '2'],
+        stimulus_duration: fastmode ? 500 : 1500,
+        trial_duration: fastmode ? 500 : 1500,
+        response_ends_trial: false,
+        data: item
+      }
+    ]
+  };
+}
+
+function buildTaskBC(stimuli, blockNum) {
+  const eligiblePairs = [];
+  for (let i = 0; i <= 28; i++) {
+    if (i + 3 < stimuli.length) {
+      eligiblePairs.push([i, i + 3]);
+    }
+  }
+  const groups = [[], [], [], []];
+  eligiblePairs.forEach(pair => {
+    groups[pair[0] % 4].push(pair);
+  });
+  const selectedPairs = [];
+  groups.forEach(group => {
+    selectedPairs.push(...jsPsych.randomization.sampleWithoutReplacement(group, 3));
+  });
+
+  const intro = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `<p>画像の順序と時間間隔を思い出す課題を始めます（ブロック${blockNum}）。<br>1〜4のキーに指を置いてください。<br><br>準備ができたら「1」のキーを押してください。</p>`,
+    choices: ['1']
+  };
+
+  const timeline = [intro];
+
+  selectedPairs.forEach(pair => {
+    const first = stimuli[pair[0]];
+    const second = stimuli[pair[1]];
+    const leftFirst = Math.random() < 0.5;
+
+    const leftImage = leftFirst ? first.file : second.file;
+    const rightImage = leftFirst ? second.file : first.file;
+
+    const orderTrial = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: `
+        <div style='display:flex; justify-content:space-around;'>
+          <img src='${leftImage}' style='max-height: 200px;'>
+          <img src='${rightImage}' style='max-height: 200px;'>
+        </div>
+        <p>どちらが先に提示されましたか？<br>
+        1: 確実に左 2: おそらく左 3: おそらく右 4: 確実に右</p>
+      `,
+      choices: ['1','2','3','4'],
+      data: {
+        task: "B",
+        left: leftImage,
+        right: rightImage,
+        correct_answer: leftFirst ? 0 : 1,
+        pair_indices: pair
+      },
+      on_finish: function(data) {
+        const resp = parseInt(data.response);
+        const side = resp <= 2 ? 0 : 1;
+        data.order_score = side === data.correct_answer ? 1 : 0;
+        data.confidence = resp;
+      }
+    };
+
+    const intervalTrial = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: `
+        <div style='display:flex; justify-content:space-around;'>
+          <img src='${leftImage}' style='max-height: 200px;'>
+          <img src='${rightImage}' style='max-height: 200px;'>
+        </div>
+        <p>2枚の提示はどれくらい離れていましたか？<br>
+        1: とても短い 2: 少し短い 3: 少し長い 4: とても長い</p>
+      `,
+      choices: ['1','2','3','4'],
+      data: {
+        task: "C",
+        pair_indices: pair
+      },
+      on_finish: function(data) {
+        data.interval_rating = parseInt(data.response);
+      }
+    };
+
+    timeline.push(orderTrial, intervalTrial);
+  });
+
+  return timeline;
+}
+
+const jsPsych = initJsPsych({
+  on_finish: () => {
+    const csv = jsPsych.data.get().csv();
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "experiment_data.csv";
+    link.innerText = "→ データをCSVでダウンロード";
+    document.body.appendChild(link);
+  }
+});
+
+fetch("stimuli.json")
+  .then(response => response.json())
+  .then(allStimuli => {
+    const timeline = [];
+
+    const imageFiles = [...new Set(allStimuli.map(item => item.file))];
+    timeline.push({
+      type: jsPsychPreload,
+      images: imageFiles
+    });
+
+    for (let block = 0; block < 6; block++) {
+      const blockStimuli = jsPsych.randomization.shuffle(allStimuli).slice(0, 32);
+      const positions = generatePositionList(32);
+      const colors = generateColorList(32);
+
+      for (let i = 0; i < 32; i++) {
+        blockStimuli[i].position = positions[i];
+        blockStimuli[i].border_color = colors[i];
+        const trial = createTrial(blockStimuli[i], positions[i], colors[i]);
+        timeline.push(trial);
+      }
+
+      timeline.push(...buildTaskBC(blockStimuli, block + 1));
+    }
+
+    jsPsych.run(timeline);
+
+    const stopBtn = document.createElement("div");
+    stopBtn.innerHTML = "⏹ 停止";
+    stopBtn.style.position = "fixed";
+    stopBtn.style.top = "10px";
+    stopBtn.style.right = "10px";
+    stopBtn.style.padding = "8px 12px";
+    stopBtn.style.backgroundColor = "#c00";
+    stopBtn.style.color = "white";
+    stopBtn.style.borderRadius = "8px";
+    stopBtn.style.cursor = "pointer";
+    stopBtn.style.zIndex = "1000";
+    stopBtn.style.fontWeight = "bold";
+    document.body.appendChild(stopBtn);
+
+    stopBtn.addEventListener("click", () => {
+      jsPsych.endExperiment("実験は停止ボタンにより中断されました。");
+    });
+  })
+  .catch(error => console.error("stimuli.json 読み込みエラー:", error));
+</script>
+</html>
